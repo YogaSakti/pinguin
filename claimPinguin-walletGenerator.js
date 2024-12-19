@@ -25,6 +25,13 @@ const fs = require('fs');
 
     fs.writeFileSync('claimPinguin-wallet.json', JSON.stringify(groupedData, null, 2));
 
+    const parentAddress = []
+    for (let i = 0; i < groupedData.length; i++) {
+        // find parent address from mnemonic in wallets array
+        const parent = wallets.find((obj) => obj.mnemonic === groupedData[i].parent || obj.Mnemonic === groupedData[i].parent);
+        parentAddress.push(parent.address || parent.Address);
+    }
+
     // parent only
-    // fs.writeFileSync('claimPinguin-address-parent.json', JSON.stringify(groupedData.map((obj) => obj.parent), null, 2));
+    fs.writeFileSync('claimPinguin-address-parent.txt', parentAddress.join('\n'));
 })()
