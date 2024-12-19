@@ -23,5 +23,7 @@ setelah command diatas dijalankan akan muncul file bernama "claimPinguin-wallet.
 PERHATIKAN setiap PARENT harus ada saldo SOLnya minimal 0.0025-0.003 karena setiap run akan claim 10 wallet sekaligus
 buka file "claimPinguin-address-parent.txt" jika kamu mau send secara bulk
 
+daftar helius buat dapetin RPC KEY SOLANA abis itu masukin ke bagian key di file "claimPinguin-byGroup.js"
+
 - run botnya
 `node claimPinguin-byGroup.js`
