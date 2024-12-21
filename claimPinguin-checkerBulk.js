@@ -182,11 +182,11 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
     for (let wallet of wallets) {
 
         const { token, address } = await getToken(wallet.mnemonic);
-        
+        await delay(1000);
         
         let isEligible = await cekEligBulk([token]);
         isEligible = isEligible.totalUnclaimed > 0;
-        await delay(2000);
+        await delay(1000);
         
 
         if (isEligible) {
@@ -213,6 +213,8 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
 
             currentGroup = []; // reset group
         }
+
+        await delay(500);
     }
 
     // add remaining wallets if any, even if the group is incomplete
