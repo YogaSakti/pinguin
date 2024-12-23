@@ -5,7 +5,7 @@
 /* eslint-disable max-lines */
 const solanaWeb3 = require('@solana/web3.js');
 // eslint-disable-next-line no-unused-vars
-const { Connection, ComputeBudgetProgram, Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL, TransactionMessage, VersionedMessage, VersionedTransaction } = solanaWeb3
+const { Connection, ComputeBudgetProgram, Keypair, PublicKey, Transaction, LAMPORTS_PER_SOL, SystemProgram, TransactionMessage, VersionedMessage, VersionedTransaction } = solanaWeb3
 const { sign } = require('tweetnacl');
 const { decodeUTF8 } = require('tweetnacl-util');
 const bs58 = require('bs58');
