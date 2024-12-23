@@ -1,30 +1,62 @@
-PINGUIN AUTO CLAIM FIXED 2.0
+# **PINGUIN AUTO CLAIM FIXED 2.0**  
 
-- clone repo
-`git clone https://github.com/YogaSakti/pinguin`
+## **Langkah-langkah Instalasi dan Penggunaan**
 
-- masuk ke folder
-`cd pinguin`
+### **1. Clone Repository**
+Jalankan perintah berikut untuk mengunduh repository:
+```bash
+git clone https://github.com/YogaSakti/pinguin
+```
 
-- ubah permission
-`chmod +x utils/curl_impersonate && chmod +x utils/curl-impersonate-chrome`
+### **2. Masuk ke Direktori**
+Pindah ke folder hasil clone:
+```bash
+cd pinguin
+```
 
-- install modul
-`npm i`
+### **3. Atur Izin Eksekusi**
+Pastikan file utilitas memiliki izin eksekusi:
+```bash
+chmod +x utils/curl_impersonate
+chmod +x utils/curl-impersonate-chrome
+```
 
-pastikan file wallet mu formatnya sama dengan test.json
+### **4. Install Modul**
+Pasang dependensi Node.js:
+```bash
+npm install
+```
 
-ubah nama file wallet jsonmu di file "claimPinguin-walletGenerator.js" jika diperlukan
+### **5. Pastikan Format Wallet**
+- Format file wallet Anda harus sesuai dengan `test.json`.
+- Jika diperlukan, ubah nama file wallet JSON Anda di **`claimPinguin-walletGenerator.js`**.
 
-- generate wallet
-`node claimPinguin-walletGenerator.js`
+### **6. Generate Wallet**
+Jalankan perintah berikut untuk membuat file wallet:
+```bash
+node claimPinguin-walletGenerator.js
+```
+- Setelah menjalankan perintah ini, file bernama **`claimPinguin-wallet.json`** akan muncul.
+- Jika file tersebut tidak muncul, periksa kembali format wallet Anda atau cek error yang terjadi.
 
-setelah command diatas dijalankan akan muncul file bernama "claimPinguin-wallet.json" jika tidak muncul maka ada yang error atau formatnya salah
+### **7. Saldo Minimum**
+- Setiap *parent wallet* harus memiliki saldo SOL minimal **0.0025 - 0.003**.
+- Bot akan melakukan klaim untuk 10 wallet sekaligus.
+- Gunakan file **`claimPinguin-address-parent.txt`** untuk mengatur pengiriman secara *bulk*.
 
-PERHATIKAN setiap PARENT harus ada saldo SOLnya minimal 0.0025-0.003 karena setiap run akan claim 10 wallet sekaligus
-buka file "claimPinguin-address-parent.txt" jika kamu mau send secara bulk
+### **8. Daftar Helius**
+- Daftar ke [Helius](https://www.helius.xyz/) untuk mendapatkan **RPC Key** Solana.
+- Masukkan **RPC Key** ke file **`claimPinguin-byGroup.js`** pada bagian key.
 
-daftar helius buat dapetin RPC KEY SOLANA abis itu masukin ke bagian key di file "claimPinguin-byGroup.js"
+### **9. Jalankan Bot**
+Eksekusi bot dengan perintah:
+```bash
+node claimPinguin-byGroup.js
+```
 
-- run botnya
-`node claimPinguin-byGroup.js`
+---
+
+Jika terdapat masalah, pastikan Anda:
+1. Memeriksa kembali konfigurasi file JSON.
+2. Menyesuaikan pengaturan sesuai langkah-langkah di atas.
+3. Menghubungi pengembang atau merujuk ke dokumentasi resmi repository.
