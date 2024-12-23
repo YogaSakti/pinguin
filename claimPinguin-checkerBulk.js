@@ -181,7 +181,7 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
 
     for (let wallet of wallets) {
 
-        const { token, address } = await getToken(wallet.mnemonic);
+        const { token, address } = await getToken(wallet.Mnemonic || wallet.mnemonic);
         await delay(1000);
         
         let isEligible = await cekEligBulk([token]);
@@ -190,11 +190,11 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
         
 
         if (isEligible) {
-            currentGroup.push(wallet.mnemonic);
-            console.log(`Wallet ${wallet.address} is eligible.`);
+            currentGroup.push(wallet.Mnemonic || wallet.mnemonic);
+            console.log(`Wallet ${wallet.Address || wallet.address} is eligible.`);
             // saveGroupToFile('claimPinguin-shadow-auth.json', { ...wallet, token });
         } else {
-            console.log(`Wallet ${wallet.address} is not eligible.`);
+            console.log(`Wallet ${wallet.Address || wallet.address} is not eligible.`);
             // saveGroupToFile('claimPinguin-shadow-auth.json', { ...wallet, token });
         }
 
