@@ -511,7 +511,7 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-shadow-mnemonic.json'
 
             // transfer remaining SOL back to main wallet
             try {
-                const transferFee = await getTransactionFee();
+                const transferFee = await getTransactionFee(pkBank);
                 const remainingBalance = await connection.getBalance(new PublicKey(accountParent.address));
                 const minimumBalanceLamports = transferFee
 
