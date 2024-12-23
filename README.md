@@ -1,3 +1,4 @@
+PINGUIN AUTO CLAIM FIXED 2.0
 
 - clone repo
 `git clone https://github.com/YogaSakti/pinguin`
