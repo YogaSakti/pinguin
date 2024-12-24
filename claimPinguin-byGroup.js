@@ -273,7 +273,7 @@ const sendSol = async (from, to, amount) => {
             instructions: [SystemProgram.transfer({
                 fromPubkey: from.publicKey,
                 toPubkey: new PublicKey(to),
-                lamports: BigInt(Math.round(number))
+                lamports: BigInt(Math.round(amount))
             })],
         }).compileToV0Message();
         const transaction = new VersionedTransaction(messageV0);
