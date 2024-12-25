@@ -1,4 +1,6 @@
-# **PINGUIN AUTO CLAIM FIXED 2.0**  
+# **PINGUIN AUTO CLAIM FIXED 2.0** 
+
+![alt text](utils/log.png)
 
 ## **Langkah-langkah Instalasi dan Penggunaan**
 
@@ -28,21 +30,22 @@ npm install
 ```
 
 ### **5. Pastikan Format Wallet**
-- Format file wallet Anda harus sesuai dengan `test.json`.
-- Jika diperlukan, ubah nama file wallet JSON Anda di **`claimPinguin-walletGenerator.js`**.
+- Format file wallet Anda harus sesuai dengan contoh yang ada di dalam file `test.json`.
+- Jika dirasa sudah sesuai maka copas dan masukan kedalam file `test.json`
 
-### **6. Generate Wallet**
+### **6. Generate Group dan Checker**
 Jalankan perintah berikut untuk membuat file wallet:
 ```bash
-node claimPinguin-walletGenerator.js
+node claimPinguin-checkerBulk.js
 ```
-- Setelah menjalankan perintah ini, file bernama **`claimPinguin-wallet.json`** akan muncul.
+- Setelah menjalankan perintah ini, file bernama **`claimPinguin-mnemonic.json`** akan muncul.
 - Jika file tersebut tidak muncul, periksa kembali format wallet Anda atau cek error yang terjadi.
 
-### **7. Saldo Minimum**
+### **7. AUTO Send Sol dan AUTO Send Token**
 - Setiap *parent wallet* harus memiliki saldo SOL minimal **0.0025 - 0.003**.
-- Bot akan melakukan klaim untuk 10 wallet sekaligus.
-- Gunakan file **`claimPinguin-address-parent.txt`** untuk mengatur pengiriman secara *bulk*.
+- Masukan privake key untuk send sol ke wallet parent secara otomatis di file `claimPinguin-byGroup.js` baris 501
+- Masukan privake key untuk fee payer pengiriman SOl dan TOKEN secara otomatis di file `claimPinguin-byGroup.js` baris 505
+- Private key keduanya boleh sama!
 
 ### **8. Daftar Helius**
 - Daftar ke [Helius](https://www.helius.xyz/) untuk mendapatkan **RPC Key** Solana.

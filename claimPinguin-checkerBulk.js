@@ -236,7 +236,7 @@ const createGroupedData = async (wallets, groupFile, totalPerGroup) => {
 (async () => {
 
     // NAMA FILENYA
-    const fileName = 'DRiP.json';
+    const fileName = 'test.json';
     // format file:
     // [
     //     {
