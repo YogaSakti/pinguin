@@ -1,6 +1,7 @@
 # **PINGUIN AUTO CLAIM FIXED 2.0** 
 
-![alt text](utils/log.png)
+![Log Running](https://github.com/user-attachments/assets/dc101776-ba47-4154-8898-928e3645a4ce)
+
 
 ## **Langkah-langkah Instalasi dan Penggunaan**
 
