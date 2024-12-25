@@ -508,7 +508,7 @@ const feePayer = generateAccount(pkFeePayer, true);
 const SEND_AMOUNT_SOL = 0.006;
 
 // wallet list
-const wallets = JSON.parse(fs.readFileSync('./claimPinguin-wallet.json', 'utf8'));
+const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8'));
 
 
 // END CONFIG ===========================================================================

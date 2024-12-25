@@ -173,9 +173,9 @@ const getToken = async (wallet) => {
     return { token: authResult.token, address };
 };
 
-const totalPerGroup = 50; // total mnemonic per grup (1 parent + sisa child)
 
-const createGroupedData = async (wallets, groupFile, parentFile = '') => {
+
+const createGroupedData = async (wallets, groupFile, totalPerGroup) => {
     let currentGroup = [];
     let groupIndex = 1;
 
@@ -206,7 +206,6 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
 
             // save current group to JSON file
             saveGroupToFile(groupFile, groupData);
-            // saveParentToFile(parentFile, parent);
 
             console.log(`Group ${groupIndex} saved.`);
             groupIndex += 1;
@@ -237,7 +236,29 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
 (async () => {
 
     // NAMA FILENYA
-    const fileName = 'DRiP.shadow.json';
+    const fileName = 'DRiP.json';
+    // format file:
+    // [
+    //     {
+    //       "Address": "",
+    //       "PrivateKey": "",
+    //       "Mnemonic": ""
+    //     },
+
+    //     atau
+
+    //     {
+    //         "address": "",
+    //         "privateKey": "",
+    //         "mnemonic": ""
+    //     }
+    //   ]
+
+    // yang penting ada mnemonic atau Mnemonic di dalam file tersebut
+
+
+
+    const totalPerGroup = 50; // total mnemonic per grup contoh: 50 = 1 parent + 49 child
 
     // load file
     let wallets = JSON.parse(fs.readFileSync(fileName, 'utf8'));
@@ -248,5 +269,5 @@ const createGroupedData = async (wallets, groupFile, parentFile = '') => {
     const groupFile = 'claimPinguin-mnemonic.json';
     
     // create grouped data and save to files incrementally
-    await createGroupedData(wallets, groupFile);
+    await createGroupedData(wallets, groupFile, totalPerGroup);
 })();
