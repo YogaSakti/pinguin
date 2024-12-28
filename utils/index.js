@@ -37,6 +37,7 @@ const fetcher = (url, method, headers, body) => new Promise((resolve, reject) =>
         resolve(JSON.parse(result))
     } else {
         console.log(params);
+        console.log(result);
         reject(result)
     }
 })

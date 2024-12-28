@@ -1,7 +1,6 @@
 /* eslint-disable max-lines-per-function */
 /* eslint-disable no-sync */
-const fetch = require('node-fetch').default;
-const rfetch = require('node-fetch-retry')
+
 const solanaWeb3 = require('@solana/web3.js');
 const { Connection, Keypair, PublicKey, sendAndConfirmTransaction, LAMPORTS_PER_SOL, SystemProgram, Transaction, VersionedMessage, VersionedTransaction } = solanaWeb3
 const { sign } = require('tweetnacl');
@@ -122,19 +121,28 @@ const cekEligBulk = (addresses) => fetcher('https://api.clusters.xyz/v0.1/airdro
 }, addresses)
 
 
-const generateAccount = (mnemonic) => {
-    const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const path = 'm/44\'/501\'/0\'/0\'';
-    const derivedSeed = derivePath(path, seed.toString('hex')).key;
-    const keypair = Keypair.fromSeed(derivedSeed)
+// generate account from private key or mnemonic
+const generateAccount = (accountData, isPk = false) => {
+    let keypair = null
+    if (isPk) {
+        keypair = Keypair.fromSecretKey(bs58.decode(accountData))
+    } else {
+        const seed = bip39.mnemonicToSeedSync(accountData);
+        const path = 'm/44\'/501\'/0\'/0\'';
+        const derivedSeed = derivePath(path, seed.toString('hex')).key;
+        keypair = Keypair.fromSeed(derivedSeed)
+    }
+
+
     if (!keypair) throw new Error('Invalid secret key')
-    const account = {
+
+    return {
+        publicKey: keypair.publicKey,
+        secretKey: keypair.secretKey,
+        // aditional data below
         address: keypair.publicKey.toBase58(),
         privateKey: bs58.encode(keypair.secretKey),
-        secretKey: keypair.secretKey
-    };
-
-    return account
+    }
 };
 
 const signMessage = (message, account) => {
@@ -163,14 +171,28 @@ const saveParentToFile = (fileName, parent) => {
 
 // do auth
 const getToken = async (wallet) => {
-    const message = await getMessage();
-    const { message: messageContent, signingDate } = message;
-    const account = generateAccount(wallet);
-    const { address } = account;
-    const { signature } = signMessage(messageContent, account);
-    const authResult = await doAuth(signature, signingDate, address);
+    try {
+        const message = await getMessage();
+        const { message: messageContent, signingDate } = message;
+        let account = null;
+        // check is wallet mnemonic or private key
 
-    return { token: authResult.token, address };
+        if (bip39.validateMnemonic(wallet)) {
+            account = generateAccount(wallet, false);
+        } else if (Keypair.fromSecretKey(bs58.decode(wallet))) {
+            account = generateAccount(wallet, true);
+        } else {
+            throw new Error('Invalid mnemonic or private key');
+        }
+
+        const { address } = account;
+        const { signature } = signMessage(messageContent, account);
+        const authResult = await doAuth(signature, signingDate, address);
+
+        return { token: authResult.token, address };
+    } catch (error) {
+        console.error('Error in getToken:', error);
+    }
 };
 
 
@@ -179,22 +201,24 @@ const createGroupedData = async (wallets, groupFile, totalPerGroup) => {
     let currentGroup = [];
     let groupIndex = 1;
 
-    for (let wallet of wallets) {
+    // for with index
+    for (const wallet of wallets) {
 
-        const { token, address } = await getToken(wallet.Mnemonic || wallet.mnemonic);
+        const { token, address } = await getToken(wallet.Mnemonic || wallet.mnemonic || wallet.privateKey);
         await delay(1000);
-        
+
         let isEligible = await cekEligBulk([token]);
         isEligible = isEligible.totalUnclaimed > 0;
         await delay(1000);
-        
+
 
         if (isEligible) {
-            currentGroup.push(wallet.Mnemonic || wallet.mnemonic);
-            console.log(`Wallet ${wallet.Address || wallet.address} is eligible.`);
+            currentGroup.push(wallet.Mnemonic || wallet.mnemonic  || wallet.privateKey);
+            console.log(`Wallet ${address || address} is eligible.`);
             // saveGroupToFile('claimPinguin-shadow-auth.json', { ...wallet, token });
         } else {
-            console.log(`Wallet ${wallet.Address || wallet.address} is not eligible.`);
+            console.log(`Wallet ${address || address} is not eligible.`);
+            continue
             // saveGroupToFile('claimPinguin-shadow-auth.json', { ...wallet, token });
         }
 
@@ -236,7 +260,7 @@ const createGroupedData = async (wallets, groupFile, totalPerGroup) => {
 (async () => {
 
     // NAMA FILENYA
-    const fileName = 'test.json';
+    const fileName = 'NAMA FILE.json';
     // format file:
     // [
     //     {
@@ -264,10 +288,9 @@ const createGroupedData = async (wallets, groupFile, totalPerGroup) => {
     let wallets = JSON.parse(fs.readFileSync(fileName, 'utf8'));
     console.log(`Total wallets: ${wallets.length}`);
 
-
     // INI NAMA FILE HASILNYA
     const groupFile = 'claimPinguin-mnemonic.json';
-    
+
     // create grouped data and save to files incrementally
     await createGroupedData(wallets, groupFile, totalPerGroup);
 })();

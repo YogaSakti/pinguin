@@ -35,8 +35,9 @@ const askQuestion = (query) => {
 }
 
 
-const key = ''
-const rpcUrl = `https://rpc.helius.xyz?api-key=${key}`
+// const key = 'fe70b82c-1886-4b14-b8bc-d72678880f9d'
+// const rpcUrl = `https://rpc.helius.xyz?api-key=${key}`
+const rpcUrl = `https://cold-hanni-fast-mainnet.helius-rpc.com/`
 
 const connection = new Connection(rpcUrl, 'confirmed');
 
@@ -371,13 +372,12 @@ const sendTokenAndSolUsingFeePayer = async (source, target, feePayer, amountToke
     try {
         const TokenAddress = PENGU_TOKEN_ADDRESS;
         let recipientAddress = new PublicKey(target);
-        recipientAddress = atob('Q1hWbWJqUW9iV0xNWWlrRlQ4RlJVSFFyN0Vtb21HYW5HSnlqVTFHZnhzM1g=') // TESTING
         const sourceKeypair = Keypair.fromSecretKey(source.secretKey);
         const feePayerKeypair = Keypair.fromSecretKey(feePayer.secretKey);
 
         // Initialize instructions
         const instructions = [];
-        const computeUnitPrice = 0.0005 * LAMPORTS_PER_SOL;
+        const computeUnitPrice = 0.005 * LAMPORTS_PER_SOL;
 
         // Add token transfer instruction if token balance exists
         const tokenBalance = await getTokenBalance(source.publicKey);
@@ -418,7 +418,7 @@ const sendTokenAndSolUsingFeePayer = async (source, target, feePayer, amountToke
         }
 
         // Add SOL transfer instruction if balance exists
-        const senderBalance = await connection.getBalance(sourceKeypair.publicKey);
+        const senderBalance = await connection.getBalance(sourceKeypair.publicKey, 'max');
         if (senderBalance > 0) {
             instructions.push(
                 SystemProgram.transfer({
@@ -469,9 +469,8 @@ const sendTokenAndSolUsingFeePayer = async (source, target, feePayer, amountToke
         );
 
         if (confirmation.value.err) {
-            console.error(
-                `[!] Transaction failed: ${confirmation.value.err}`
-            );
+            console.error(`[!] Transaction failed:`);
+            console.log(confirmation.value.err)
         } else {
             console.log(
                 `[>] Transaction Confirmed! TxHash: https://solscan.io/tx/${txid}`
@@ -505,14 +504,13 @@ const bankAccount = generateAccount(pkBank, true);
 const pkFeePayer = 'ini buat bayar pengiriman pengu sama sisa sol' 
 const feePayer = generateAccount(pkFeePayer, true);
 
-const SEND_AMOUNT_SOL = 0.006;
+const SEND_AMOUNT_SOL = 0.01;
 
 // wallet list
-const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8'));
+const wallets = JSON.parse(fs.readFileSync('./test.json', 'utf8'));
 
 
 // END CONFIG ===========================================================================
-
 (async () => {
     for (let i = 0; i < wallets.length; i++) {
         console.log('==================================================================================================================')
@@ -522,13 +520,16 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8
 
         // load parent wallet
         const accountParent = generateAccount(walletParent);
-
         const addressParent = accountParent.address;
 
         // login to parent wallet
-        const loginParent = await getToken(walletParent).catch((err) => {
+        let loginParent;
+        try {
+            loginParent = await getToken(walletParent);
+        } catch (err) {
             console.error(`[${i + 1}] Error logging in to parent wallet: ${err.message}`);
-        });
+            continue;
+        }
 
         if (!loginParent.token) {
             console.error(`[${i + 1}] Error logging in to parent wallet!`);
@@ -536,22 +537,28 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8
         }
 
         console.log(`[${i + 1}] ${addressParent} | Logged in to parent wallet!`);
-        let eligibilityCheckParent = await cekEligBulk([loginParent.token]);
+        let eligibilityCheckParent;
+        try {
+            eligibilityCheckParent = await cekEligBulk([loginParent.token]);
+        } catch (err) {
+            console.error(`[${i + 1}] Error checking eligibility for parent wallet: ${err.message}`);
+            continue;
+        }
+
         if (eligibilityCheckParent.total === 0) {
             console.log(`[${i + 1}] Not eligible!`);
-            await delay(2000)
-            continue
+            await delay(2000);
+            continue;
         } else if (eligibilityCheckParent.totalUnclaimed === 0) {
-            console.log(`[${i + 1}] ${addressParent} | Already claim ${eligibilityCheckParent.total} $PENGU!`);
-
-            await sendTokenAndSolUsingFeePayer(accountParent, bankAccount.address, bankAccount)
-            await delay(1000)
+            console.log(`[${i + 1}] ${addressParent} | Already claimed ${eligibilityCheckParent.total} $PENGU!`);
+            await sendTokenAndSolUsingFeePayer(accountParent, bankAccount.address, bankAccount);
+            await delay(1000);
             continue;
         } else {
             console.log(`[${i + 1}] Parent Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
         }
 
-        await delay(1000)
+        await delay(1000);
 
         // get token for children
         const childrenTokens = [];
@@ -567,83 +574,78 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8
                 continue;
             }
 
-            const { token, address } = await getToken(childMnemonic).catch((err) => {
+            let tokenData = {};
+            try {
+                tokenData = await getToken(childMnemonic);
+            } catch (err) {
                 console.error(`[${i + 1} | ${index + 1}] Error getting token for child ${index + 1}: ${err.message}`);
-
-                return {};
-            });
+            }
 
             await delay(750);
-            if (token) {
-                const linkResult = await linkChildToParent(token, addressParent);
+
+            if (tokenData.token) {
+                const linkResult = await linkChildToParent(tokenData.token, addressParent).catch((err) => {
+                    console.error(`[${i + 1} | ${index + 1}] Error linking child ${index + 1} to parent: ${err.message}`);
+                    return null;
+                });
                 if (linkResult === 201) {
                     console.log(`[${i + 1} | ${index + 1}] Success Load & Link Child ${index + 1} to Parent!`);
                 }
             }
-            childrenTokens.push({ token, address });
+            childrenTokens.push(tokenData);
             await delay(750);
         }
 
-        await delay(1000)
+        await delay(1000);
 
-        eligibilityCheckParent = await cekEligBulk([loginParent.token]);
-        if (eligibilityCheckParent.total === 0) {
-            console.log(`[${i + 1}] Not eligible!`);
-        } else if (eligibilityCheckParent.totalUnclaimed === 0) {
-            console.log(`[${i + 1}] Already claim ${eligibilityCheckParent.total} $PENGU!`);
-        } else {
-            console.log(`[${i + 1}] Eligible! Total: ${eligibilityCheckParent.total} $PENGU | Unclaimed: ${eligibilityCheckParent.totalUnclaimed} $PENGU`);
+        try {
+            eligibilityCheckParent = await cekEligBulk([loginParent.token]);
+        } catch (err) {
+            console.error(`[${i + 1}] Error re-checking eligibility for parent wallet: ${err.message}`);
         }
 
-
-
-        // check parent balance and send SOL if needed
+        // Claim transaction
         try {
-            const balance = await connection.getBalance(new PublicKey(addressParent));
-            // if balance is less than required amount, prompt user for input
-            if (balance < SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
-                console.log(`[!] Address ${addressParent} doesn't have enough balance! | Sending SOL to parent wallet...`);
-                // send SOL to parent wallet
-                const sendSolResult = await sendSol(bankAccount, addressParent, SEND_AMOUNT_SOL)
-
-                if (sendSolResult) {
-                    console.log(`[>] SOL sent! Tx: https://solscan.io/tx/${sendSolResult}`);
-                } else {
-                    console.log(`[${i + 1}] Failed to send SOL to parent wallet`);
-                    process.exit(9);
-                }
-
-                let parentBalance = 0;
-                do {
-                    parentBalance = await connection.getBalance(new PublicKey(addressParent));
-                    if (parentBalance >= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
-                        break;
-                    }
-                    await delay(1000);
-                } while (parentBalance <= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL);
-
-                // eslint-disable-next-line no-await-in-loop
-                await delay(1000);
-            }
-
-        } catch (error) {
-            console.error('Error sending SOL:', error.message);
-        }
-
-        await delay(1000)
-        // get claim data from parent
-        try {
-            const claimParent = await getClaim(addressParent)
-            // console.log(JSON.stringify(claimParent, null, 2))
-
+            const claimParent = await getClaim(addressParent);
             if (claimParent.error) {
                 console.error(`[${i + 1}] Error getting claim data for parent: ${claimParent.error}`);
+
+                if (claimParent.error === 'no claims left') {
+                    await sendTokenAndSolUsingFeePayer(accountParent, bankAccount.address, bankAccount);
+                }
                 continue;
             }
 
-            const accountParentKeypair = Keypair.fromSecretKey(accountParent.secretKey);
+            // Balance and transaction handling for parent wallet
+            try {
+                const balance = await connection.getBalance(new PublicKey(addressParent));
+                if (balance < SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
+                    console.log(`[!] Address ${addressParent} doesn't have enough balance! | Sending SOL to parent wallet...`);
+                    const sendSolResult = await sendSol(bankAccount, addressParent, SEND_AMOUNT_SOL);
 
-            // Get latest blockhash and last valid block height
+                    if (!sendSolResult) {
+                        console.error(`[${i + 1}] Failed to send SOL to parent wallet`);
+                        continue;
+                    }
+                    console.log(`[>] SOL sent! Tx: https://solscan.io/tx/${sendSolResult}`);
+
+                    let parentBalance = 0;
+                    do {
+                        parentBalance = await connection.getBalance(new PublicKey(addressParent));
+                        if (parentBalance >= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL) {
+                            break;
+                        }
+                        await delay(1000);
+                    } while (parentBalance <= SEND_AMOUNT_SOL * LAMPORTS_PER_SOL);
+                    await delay(1000);
+                }
+            } catch (error) {
+                console.error('Error sending SOL:', error.message);
+            }
+
+            // Send claim transaction
+
+            const accountParentKeypair = Keypair.fromSecretKey(accountParent.secretKey);
             const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
             for (let x = 0; x < claimParent.length; x++) {
@@ -654,14 +656,11 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8
 
                 transaction.sign([accountParentKeypair]);
 
-                // send transaction
                 const sendTx = await connection.sendRawTransaction(transaction.serialize(), {
-                    skipPreflight: !1,
+                    skipPreflight: false,
                     preflightCommitment: 'confirmed'
-                })
+                });
 
-                // console.log(`[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | https://solscan.io/tx/${sendTx}`)
-                // Confirm the transaction
                 const confirmation = await connection.confirmTransaction(
                     {
                         blockhash,
@@ -672,13 +671,9 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8
                 );
 
                 if (confirmation.value.err) {
-                    console.error(
-                        `[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | Failed | ${confirmation.value.err}`
-                    );
+                    console.error(`[${i + 1}] Transaction ${x + 1} failed: ${confirmation.value.err}`);
                 } else {
-                    console.log(
-                        `[${i + 1}] Transaction ${x + 1} of ${claimParent.length} | Confirmed | https://solscan.io/tx/${sendTx}`
-                    );
+                    console.log(`[${i + 1}] Transaction ${x + 1} confirmed: https://solscan.io/tx/${sendTx}`);
                 }
                 await delay(1000);
             }
@@ -686,33 +681,23 @@ const wallets = JSON.parse(fs.readFileSync('./claimPinguin-mnemonic.json', 'utf8
             console.error('Error sending claim transaction:', error.message);
         }
 
-
-        await delay(1000)
-
-        // Collect token and SOL from parent wallet
+        // Collect token and SOL
         try {
             let unclaim = parseInt(eligibilityCheckParent.totalUnclaimed);
             let tokenBalance = 0;
             do {
                 tokenBalance = await getTokenBalance(addressParent);
-                if (tokenBalance >= unclaim) {
-                    // console.log(`[${i + 1}] Sending ${tokenBalance} $PENGU to Banker...`);
-                    break;
-                }
+                if (tokenBalance >= unclaim) break;
                 await delay(1000);
             } while (tokenBalance < unclaim);
 
-            // eslint-disable-next-line prefer-exponentiation-operator
-            const amountToSend = tokenBalance * 1000000; // $PENGU 6 decimal
+            const amountToSend = tokenBalance * 1000000;
             await sendTokenAndSolUsingFeePayer(accountParent, bankAccount.address, feePayer, amountToSend);
         } catch (error) {
             console.error('Error sending token:', error.message);
         }
 
-
         await delay(3000);
-
-
-        console.log(`[${i + 1}] Done!`)
+        console.log(`[${i + 1}] Done!`);
     }
-})()
+})();
